@@ -1,0 +1,2 @@
+Nous n'avons pas réussi à importer des fichiers .js dans le HTML, c'est pour cette raison que le fichier contient tout le code.
+Nos excuses.

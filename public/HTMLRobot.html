@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Robot Programming Visualizer</title>
+    <style>
+      body {
+    	  background-color: #404040;
+    	  color: #eee;
+    	  font-family: Helvetica, Arial;
+      }
+      div#visualizer {
+          font: 25px/25px Arial;
+          width: 680px; height: 720px;
+          background: #333;
+          margin: auto;
+      }
+      #visualizer table {
+          border-collapse: collapse;
+          margin: auto;
+      }
+      #visualizer_board td {
+          width: 40px; height: 40px;
+	  text-align: center;
+          padding: 0px;
+          font-family: 'robots';
+          font-size:24px;
+      }
+      #visualizer_board td.red_tile {
+          border: 1px solid gray;
+          background: linear-gradient(to top left, #ff0000, #993333);
+      }
+      #visualizer_board td.green_tile {
+          border: 1px solid gray;
+          background: linear-gradient(to top left, #00aa44, #337733);
+      }
+      #visualizer_board td.blue_tile {
+          border: 1px solid gray;
+          background: linear-gradient(to top left, #0044ff, #333399);
+      }
+      #visualizer_buttons {
+	  text-align: center;
+      }
+      @font-face {
+          font-family: 'robots';
+          src: url('./robot.ttf') format('truetype');
+      }
+    </style>
+  </head>
+  <body>
+    <div id="visualizer">
+      <table>
+        <tbody id="visualizer_board">
+
+        </tbody>
+      </table>
+      <div id="visualizer_buttons">
+	<button id="button_move">Move me !</button>
+      </div>
+    </div>
+  </body>
+  <script type="text/javascript">
+    // 'robots.ttf' defines 16 ad-hoc icons, using codes from \uEE00 to \uEE0F :
+    // 0 = robot pointing east, 1 = robot pointing south, 2 = robot pointing west,
+    // 3 = robot pointing north, 4 = star, 5 = disk, 6 = box, 7 = flash,
+    // 8 = heart, 9 = broken heart, A = lock, B = open lock, C = key,
+    // D = droplet, E = rocket, F = empty
+//--------------------------------------------------------------------Script from js files move.js---------------------------------------------------------------------------------------/  
+
+/** 
+* TODO ************************************ CONSTANTS *************************************/
+
+// robozzle moves 
+  const goAhead=0, turnRight=1, turnAround=2, turnLeft=3, jump=4;
+// robozzle functions
+  const F1=5,  F2=6, F3=7, F4=8, F5=9;
+// directions 
+  const North=3, East=0, South=1, West=2;
+// play in order to win when no star and no instruction left
+  const collectAllStarsAndEndInstructions=1;
+// play in order to win when only no star is left
+const collectAllStars=0;
+// no instructions const 
+ const noInstructions = [];
+// no holes used
+const noHoles = 0;
+
+    
+function robotColor(map)    { return map.board[map.robot.x][map.robot.y]; }    
+
+function changeDirection(move,dir) { return (move+dir)%4 ; }                     
+
+function dx(newDir)          { return newDir===North ? -1 : newDir===South ? 1 : 0 ; }  // move on x
+function dy(newDir)          { return newDir===West  ? -1 : newDir===East  ? 1 : 0 ; }  // move on y
+
+function height(map)                      { return map.board.length; }
+function width(map)                       { return map.board[0].length; }
+
+function isOut(map)  {     
+    return map.robot.y <= 0 || map.robot.y >= width(map) || map.robot.x <= 0 ||
+           map.robot.x >= height(map) || robotColor(map)===' '; 
+}
+
+
+function isStar(map)  { 
+    return robotColor(map)!==' ' && robotColor(map)===robotColor(map).toUpperCase(); }
+
+  function instructionToJsFunction(instruction) {
+    function func(map) { 
+        // change robot direction
+        let newDir = changeDirection(instruction[1],map.robot.dir) ;
+        // FACT: the only instructions that can displaces a robot are 'goAhead' and 'jump'
+        if ( instruction[1]===goAhead || instruction[1]===jump ) {
+            // then return the new displaced robot in a new map
+            // goAhead has 1 step, jump has 2 steps, so 
+            let steps= 1 + instruction[1]/4;
+            let newRobot= { x: map.robot.x + steps*dx(newDir), y: map.robot.y + steps*dy(newDir), dir: newDir };
+            let newMap= { board: map.board, robot: newRobot, stars: map.stars, hole: map.hole,
+                          keys: map.keys, maxMoves: map.maxMoves -1, moves: map.moves+steps, obj: map.obj };
+            if (isStar(newMap))   return removeStar(newMap);          // robot eats the star
+            else                  return newMap;                      // keep my stars number
+        }
+        // else, just change the direction, (example: turnRight)
+        return { board: map.board, robot: { x: map.robot.x, y: map.robot.y, dir: newDir }, stars: map.stars,
+                 hole: map.hole, keys: map.keys, maxMoves: map.maxMoves-1, moves: map.moves, obj: map.obj };
+    }
+    // my function is ready !
+    return func;
+}
+
+function removeStar(map) {  
+    let newMap= { board: [], robot:map.robot, stars: map.stars-1, hole: map.hole, 
+                  keys: map.keys, maxMoves: map.maxMoves, moves: map.moves, obj: map.obj  };
+    function Terminal(i) { 
+        if (i!==map.board.length) {
+            if (i===map.robot.x) {
+                newMap.board[i] = map.board[i].slice(0,map.robot.y) + robotColor(map).toLowerCase() 
+                                 + map.board[i].slice(map.robot.y+1) ; }
+            else newMap.board[i] = map.board[i];
+            Terminal(i+1);
+        }
+    }
+    Terminal(0);
+    return newMap;
+}
+
+    function putStar(map) {  
+    let newMap= { board: [], robot:map.robot, stars: map.stars+1, hole: map.hole, 
+                  keys: map.keys, maxMoves: map.maxMoves, obj: map.obj  };
+    function Terminal(i) { 
+        if (i!==map.board.length) {
+            if (i===map.robot.x) {
+                let r= robotColor(map)===' ' ? 'B' : robotColor(map).toUpperCase() ;
+                newMap.board[i] = map.board[i].slice(0,map.robot.y) + r 
+                                 + map.board[i].slice(map.robot.y+1) ; }
+            else newMap.board[i] = map.board[i];
+            Terminal(i+1);
+        }
+    }
+    Terminal(0);
+    return newMap;
+}
+
+
+
+  function holeTeleport(map) {
+    if ( map.robot.x===map.hole.xe && map.robot.y===map.hole.ye ) {
+        let newRobot= { x: map.hole.xa+dx(map.hole.dirA), y: map.hole.ya+dy(map.hole.dirA), dir: map.hole.dirA };
+        let newMap= { board: map.board, robot: newRobot, stars: map.stars, hole: map.hole, 
+                      keys: map.keys, maxMoves: map.maxMoves-1, obj: map.obj };
+        return newMap;
+    }
+    else {
+        let newRobot= { x: map.hole.xe+dx(map.hole.dirE), y: map.hole.ye+dy(map.hole.dirE), dir: map.hole.dirE };
+        let newMap= { board: map.board, robot: newRobot, stars: map.stars, hole: map.hole, 
+                      keys: map.keys, maxMoves: map.maxMoves-1, obj: map.obj };
+        return newMap; 
+    }
+}
+ 
+
+
+
+//--------------------------------------------------------------------END OF MOVE.JS----------------------------------------------------------------------------------------------------/
+
+
+
+
+//--------------------------------------------------------------------Script from js files graph.js---------------------------------------------------------------------------------------/
+/**
+ * TODO ******************************** GRAPHICS **********************************/
+
+
+/* displays directions */
+function dirDisp(dir)  { 
+    return dir===North ? '^' : dir===East ? '>' : dir===South ? 'v' : '<' ; }
+
+/* displays hole directions */
+function holeDisp(dir) { 
+    return dir===North ? 'n' : dir===East ? 'e' : dir===South ? 's' : 'w' ; }
+
+/* displays move */
+function moveDisp(inst) { 
+    return inst===goAhead ? 'goAhead' : inst===turnRight ? 'turnRight' : 
+           inst===turnLeft ? 'turnLeft' : inst===turnAround ? 'turnAround' : 
+           inst===jump ? 'jump' : inst===F1 ? 'F1' : inst===F2 ? 'F2' :
+           inst===F3 ? 'F3' : inst===F4 ? 'F4' : 'F5' ;
+}
+
+/* displays instruction */
+ function instructionDisp(instruction) {
+    console.log( [instruction[0], moveDisp(instruction[1])] );
+}
+
+/* displays a new map, where the robot is shown by its direcition : > or v or < or ^  */
+ function mapDisp(map) {
+    function t(j,i,str) {
+        if (str.length===j) return '';
+        if (i===map.robot.x && j===map.robot.y) 
+            return dirDisp(map.robot.dir) + t(j+1,i,str);
+        else if (i===map.hole.xe && j===map.hole.ye) 
+            return holeDisp(map.hole.dirE) + t(j+1,i,str);
+        else if (i===map.hole.xa && j===map.hole.ya) 
+            return holeDisp(map.hole.dirA) + t(j+1,i,str);  
+        else return map.board[i][j] + t(j+1,i,str);
+    }
+    /* Terminal function */
+    function Terminal(i) { 
+        if (i < map.board.length) {
+            let str= t(0,i,map.board[i]);
+            console.log(strDisp(str,map)); 
+            Terminal(i+1);
+        }
+    }
+    Terminal(0);
+}
+
+
+/*our map disp */
+ function mapDisp2(map) {
+    function t(j,i,str) {
+        if (str.length===j) return '';
+        if (i===map.robot.x && j===map.robot.y) 
+            return dirDisp(map.robot.dir) + t(j+1,i,str);
+        else if (i===map.hole.xe && j===map.hole.ye) 
+            return holeDisp(map.hole.dirE) + t(j+1,i,str);
+        else if (i===map.hole.xa && j===map.hole.ya) 
+            return holeDisp(map.hole.dirA) + t(j+1,i,str);  
+        else return map.board[i][j] + t(j+1,i,str);
+    }
+    /* Terminal function */
+    function Terminal(i) { 
+        if (i < map.board.length) {
+            let str= t(0,i,map.board[i]);
+            console.log(map.board(i)); 
+            Terminal(i+1);
+        }
+    }
+    Terminal(0);
+}
+
+
+
+
+
+
+
+
+
+
+/* returns color of robot position in a given map */
+function robotColor(map)    { return map.board[map.robot.x][map.robot.y]; }    
+
+/* returns if robot is in Hole or not */
+function inHole(map) { return (map.robot.x===map.hole.xe && map.robot.y===map.hole.ye)  
+    || (map.robot.x===map.hole.xa && map.robot.y===map.hole.ya) ; }
+
+
+/* displays colored string */
+function strDisp(str,map) {
+    function disp(color) {
+        const nothing=' '; 
+        const robotDir= dirDisp(map.robot.dir);
+        const holerobot= `\x1b[31m${robotDir}\x1b[0m`;
+        const star=  `\x1b[35m${'o'}\x1b[0m`;
+        const north= `\x1b[35m${'N'}\x1b[0m`;
+        const south= `\x1b[35m${'S'}\x1b[0m`;
+        const west=  `\x1b[35m${'W'}\x1b[0m`;
+        const east=  `\x1b[35m${'E'}\x1b[0m`;
+        // simple cells
+        if (color==='r')       return `\x1b[41m${nothing}\x1b[0m`;
+        else if (color==='b')  return `\x1b[44m${nothing}\x1b[0m` ;
+        else if (color==='g')  return `\x1b[42m${nothing}\x1b[0m`;
+        // stars
+        else if (color==='R')  return `\x1b[41m${star}\x1b[0m`;
+        else if (color==='B')  return `\x1b[44m${star}\x1b[0m` ;
+        else if (color==='G')  return `\x1b[42m${star}\x1b[0m`;
+        // holes
+        else if (color==='n')  return `\x1b[47m${north}\x1b[0m`;
+        else if (color==='s')  return `\x1b[47m${south}\x1b[0m`;
+        else if (color==='w')  return `\x1b[47m${west}\x1b[0m`;
+        else if (color==='e')  return `\x1b[47m${east}\x1b[0m`;
+        // robot
+        else if (color===robotDir) {
+            if (inHole(map))                               return `\x1b[47m${holerobot}\x1b[0m`;
+            if (robotColor(map).toUpperCase()==='R')       return `\x1b[41m${color}\x1b[0m` ;
+            else if (robotColor(map).toUpperCase()==='B')  return `\x1b[44m${color}\x1b[0m` ;
+            else if (robotColor(map).toUpperCase()==='G')  return `\x1b[42m${color}\x1b[0m` ;
+            else return `${color}`;
+        } 
+        else return `${color}`;
+    }
+    if (str.length===0) return 'x';
+    //else return disp(str[0]) + strDisp(str.slice(1),map);
+    else return str[0] + strDisp(str.slice(1),map);
+}
+
+
+//--------------------------------------------------------------------END OF graph.JS----------------------------------------------------------------------------------------------------/
+
+
+
+//--------------------------------------------------------------------Script from js files list.js---------------------------------------------------------------------------------------/
+
+// Functions on pointed pairs
+ function cons(_head, _tail) { return { head: _head, tail: _tail }; }
+ const nil = {};
+ function head(cons)        { return cons['head']; }
+ function tail(cons)        { return cons['tail']; }
+ function isEmpty(l)        { return l===nil; }
+ function emptyList()           { return nil; }
+// Predicate testing if an object `obj` has a field `key`
+function hasKey(obj, key) {
+    return Object.keys(obj).includes(key);
+}
+// isList
+function isList(l){
+    if (l===nil) return true;
+    return hasKey(l,"head") && hasKey(l,"tail") && isList(tail(l));
+}
+// convert given array to list will be used 
+ function arrayToList(ar){
+    function arrayToList_i(ar,i) { return i===ar.length ? nil : cons(ar[i],arrayToList_i(ar,i+1)); }
+    return isList(ar) ? ar : arrayToList_i(ar,0);
+}
+ function listDisp(l){
+    function listDisp1(l) { return isEmpty(l) ? ` ]` : `, ${head(l)}` + listDisp1(tail(l)); }
+    return isEmpty(l) ? '[ ]' : `[ ${head(l)}`  + listDisp1(tail(l));
+}
+ function listAppend(l1,e)         { return isEmpty(l1) ? cons(e,nil) : cons(head(l1),listAppend(tail(l1),e));}
+//--------------------------------------------------------------------END OF list.JS----------------------------------------------------------------------------------------------------/
+
+
+    
+//--------------------------------------------------------------------Script from js files main.js---------------------------------------------------------------------------------------/
+
+
+// game understanding functions
+function noInstructionsLeft(l)            { return isEmpty(l); }
+function nextInstruction(l)               { return head(l); }
+function otherInstructions(l)             { return tail(l); }
+function noStarLeft(map)                  { return map.stars===0 }
+function noKeysLeft(map)                  { return map.keys<=0; }
+function overMoves(map)                   { return map.maxMoves <= 0}
+ function height(map)                      { return map.board.length; }
+ function width(map)                       { return map.board[0].length; }
+
+/* is robot out of puzzle ? */
+function isOut(map)  {     
+    return map.robot.y <= 0 || map.robot.y >= width(map) || map.robot.x <= 0 ||
+           map.robot.x >= height(map) || robotColor(map)===' '; 
+}
+
+/* is the instruction appliable in the given map ? */
+function isApplied(map,instruction) {
+     return instruction[0]==='anycolor' || robotColor(map).toUpperCase()===instruction[0].toUpperCase() ;
+}
+
+/* Simple instructions are : turnRight, goAhead...
+   F1, F2 ... are not  */
+function isSimpleInstruction(instruction) { return instruction[1] < F1; }
+
+/*  INPUT : Fn : an instruction 
+    PRECOND : Fn is not a simple instruction 
+    OUTPUT : index i such that F[i] is Fn
+    EXAMPLE : idx(['r',F1]) = 0, because F[0] represents F1
+*/
+function idx(Fn)  { return Fn[1]-F1; }
+
+/*  INPUTS  : a map, Fi, Fj = cons( instruction1, cons( instruction2.... 
+    OUTPUT  : boolean : Fj calls itself at first instruction : infinit loop 
+    PRECOND : Fi, Fj are not simple instructions
+    EXAMPLE : F1 = [ ['r',F1], ... ] is an infinit loop if robot in red
+*/
+function isLoop(map,Fi,Fj) {
+    return isApplied(map, nextInstruction(Fj)) && nextInstruction(Fj)[1]===nextInstruction(Fi)[1]
+}
+/* force a map to be infinite, when the boolean isLoop is true */
+function Infinit(map) { return { board: map.board, robot: map.robot, stars: map.stars, hole: map.hole, 
+    keys: map.keys, maxMoves:-1, obj: map.obj }; }
+
+
+/* returns if robot is in Hole or not */
+function inHole(map) { return (map.robot.x===map.hole.xe && map.robot.y===map.hole.ye)  
+    || (map.robot.x===map.hole.xa && map.robot.y===map.hole.ya) ; }
+
+/** 
+ * TODO ************************************** MAIN ****************************************/
+
+/*  INPUTS : a map, an array F= [F1,F2,F3....] of lists Fi
+             such that each list Fi= cons( instruction1, cons( instruction2....  
+             such that instruction1= ['r', goAhead ] (for example) ... 
+    OUTPUT : a map that it doesn't have to evoluate no more for one of the reasons bellow :
+               - the robot was out of the map 
+               - the robot has eaten all stars (objetive setup) 
+               - no F1 instruction left, all F1 applied
+               - inifinit loop 
+    Also displays full robot evolution in the map
+*/
+    
+  
+
+function mapEvoluate3(aBoardID,initialMap,F) {
+    let tmp=1;
+    function rec(map,Fi) {
+
+
+	function test(robot) {
+	    removeRobot();
+	    addRobot(aBoardID,robot);
+	}
+	//test();
+		
+	
+
+	// if robot is out the map, or no star left, or no instructions left 
+        if ( isOut(map) || (noStarLeft(map)  && map.obj===collectAllStars) 
+             || overMoves(map) || noInstructionsLeft(Fi) )  return map;
+        // when a robot dive in a hole without keys, it teleports to another position
+        else if ( inHole(map) && noKeysLeft(map) ) {
+            let newMap= holeTeleport(map);
+            //mapDisp(newMap);
+            tmp++;
+	    setTimeout(() => {  test(newMap.robot); }, 50*tmp);
+	    //setTimeout(() => {  test(newMap); }, 5000);
+	    return rec(newMap, Fi);
+        }
+        // if condition cannot be applied, then jump to other instructions 
+        else if ( !isApplied(map, nextInstruction(Fi)) )  {
+            return rec(map, otherInstructions(Fi)); }
+        // if it calls recursively an Fj, go apply it , when it's done, carry on left instructions of Fi 
+        else if ( !isSimpleInstruction( nextInstruction(Fi) ) ) { 
+            let Fj= F[ idx(nextInstruction(Fi)) ];
+            if ( isLoop(map,Fi,Fj) ) return Infinit(map);
+            else return rec( rec(map,Fj), otherInstructions(Fi) ); } 
+        // if it is a simple applied instruction:
+        else { 
+            let newMap= instructionToJsFunction( nextInstruction(Fi) )(map);    // apply it 
+
+	    
+		    
+	    //removeRobot();
+	    //addRobot(aBoardID,newMap.robot)
+	    tmp++;
+	    setTimeout(() => {  test(newMap.robot); }, 50*tmp);
+	    
+	    //setTimeout(() => { removeRobot(); addRobot(aBoardID,newMap.robot); }, 1000);
+	    //instructionDisp(nextInstruction(Fi));                               // show instruction
+            //mapDisp(newMap);                                                    // display new robot
+            return rec( newMap, otherInstructions(Fi) ); }                           // next instruction
+    }
+    return rec(initialMap, F[0]);
+}
+
+    
+    
+/* Game Console
+    INPUTS : initial map, an array F= [F1,F2,F3....] of arrays Fi
+             such that each array Fi= [instruction1, instruction2....]
+             such that instruction1= ['r', goAhead ] (for example) ... 
+    OUTPUT : game results 
+*/
+ function playGame(initialMap, F) {
+    // 1- convert arrays Fi to lists
+    let F_list= F.map( arrayToList );
+    // remind of initial part  
+    console.log('Play the game ! \n'); mapDisp(initialMap); 
+    // 2- Let the game begin !
+    let finalMap= mapEvoluate(initialMap, F_list);
+    let moves= initialMap.maxMoves - finalMap.maxMoves;
+    // 3- Game results 
+    return isOut(finalMap) ? 'fell off puzzle' : overMoves(finalMap) ? 'inifinit loop' 
+           : noStarLeft(finalMap) ? 'puzzle complete in ' + `${moves}` +' steps' : 
+           'fell off puzzle';
+}
+
+
+
+
+/* Game Console
+    INPUTS : initial map, an array F= [F1,F2,F3....] of arrays Fi
+             such that each array Fi= [instruction1, instruction2....]
+             such that instruction1= ['r', goAhead ] (for example) ... 
+    OUTPUT : game results 
+*/
+    function playGame2(aBoardID,initialMap, F) {
+    // 1- convert arrays Fi to lists
+    let F_list= F.map( arrayToList );
+    // remind of initial part   
+	// 2- Let the game begin !
+	
+	//let finalMap =mapEvoluate(initialMap, F_list);
+	let finalMap = mapEvoluate3(aBoardID,initialMap, F_list);
+	
+	//removeRobot();
+	//addRobot(aBoardID,{x:2, y: 1, dir: 0});
+	//removeRobot();
+	//addRobot(aBoardID,finalMap.robot);
+	/*
+	function test(robot) {
+	    removeRobot();
+	    addRobot(aBoardID,robot);
+	}
+	//test();
+	setTimeout(() => {  test({x:1, y: 1, dir: 0}); }, 1000);
+	setTimeout(() => {  test({x:2, y: 1, dir: 0}); }, 2000);
+	*/
+	
+	//let moves= initialMap.maxMoves - finalMap.maxMoves;
+    // 3- Game results 
+    /*return isOut(finalMap) ? 'fell off puzzle' : overMoves(finalMap) ? 'inifinit loop' 
+           : noStarLeft(finalMap) ? 'puzzle complete in ' + `${moves}` +' steps' : 
+           'fell off puzzle'; */
+}
+
+
+    
+//--------------------------------------------------------------------END OF main.JS----------------------------------------------------------------------------------------------------/
+
+
+
+//--------------------------------------------------------------------Script from js Smartsnack .js---------------------------------------------------------------------------------------/
+    
+
+
+
+    /* verify is robot is out map */
+function isOutDim(map) { return map.robot.y < 1 || map.robot.y > width(map)-2 || map.robot.x < 1 ||
+    map.robot.x > height(map)-2 }
+
+/* verify if robot is in a right place, ie: it can go freely ahead, go right and left
+   example :                             .            .
+      . means empty cell                 > .        . ^ .       . v . 
+                                         .                        .
+*/
+ function isRightPlace(map) {
+    if (isOutDim(map)) return isOutDim(map);
+    let n1= instructionToJsFunction( ['anycolor', goAhead] )(map) ;
+    let n2= instructionToJsFunction( ['anycolor', turnRight] )(map) ;
+    let n3= instructionToJsFunction( ['anycolor', turnLeft] )(map) ;
+    let nR= instructionToJsFunction( ['anycolor', goAhead] )(n2) ;
+    let nL= instructionToJsFunction( ['anycolor', goAhead] )(n3) ;
+    return robotColor(n1)!==' ' || robotColor(nL)!==' ' || robotColor(nR)!==' ' ;
+}
+
+/* returns random robot */
+function getRandomRobot(height,width) { 
+    let rx= Math.floor(Math.random() * (height-6)) +3 ;
+    let ry= Math.floor(Math.random() * (width -6)) +3 ;
+    let rdir= Math.floor(Math.random() * 4) ;
+    return {x: rx, y: ry, dir: rdir} ; 
+}
+
+/* INPUTS : height, width of a map 
+            n : maximum allowed moves 
+   OUTPUT : empty mad : board with ' '
+*/
+function emptyMap(height,width,n,obj) {
+    function emptyRow(w) { return w===0 ? '' : ' ' + emptyRow(w-1); }
+    let emptyMap= { board: [], robot: getRandomRobot(10,17), stars:0, 
+                    hole: noHoles, maxMoves: n, moves:0, obj: obj, }
+    function Terminal(i) { 
+        if (i<height) {
+            emptyMap.board[i] = emptyRow(width);
+            Terminal(i+1);
+        }
+    }
+    Terminal(0);
+    return emptyMap;
+}
+
+
+/* colors the robot position with color */
+function colorMap(map,color) {
+    let newMap= { board: [], robot:map.robot, stars: map.stars, hole: map.hole, 
+                  maxMoves: map.maxMoves, moves: map.moves, obj: map.obj };
+    /* Terminal function */
+    function Terminal(i) { 
+        if (i<map.board.length) {
+            if (i===map.robot.x) {
+                if (color==='anycolor')
+                    newMap.board[i] = map.board[i].slice(0,map.robot.y) + 'b' + map.board[i].slice(map.robot.y+1) ; 
+                else 
+                    newMap.board[i] = map.board[i].slice(0,map.robot.y) + color + map.board[i].slice(map.robot.y+1) ; 
+            }
+            else newMap.board[i] = map.board[i];
+            Terminal(i+1);
+        }
+    }
+    Terminal(0);
+    return newMap;
+}
+
+
+/* INPUTS : 
+    - h,w : height and width of map
+    -  n  : maximum allowed moves
+    - obj : map objetive
+    - functions : table of 5 functions, described bellow
+   OUTPUT : 
+       an inital map with solution of simple instructions 
+*/
+ function CreatMap(h,w,n,obj,functions) {
+
+    let turnFall=functions[0]; // 1 argument (map) > boolean : instruction can't be added 
+    let goFall=functions[1];  //  1 argument (map) > boolean : instruction can't be added 
+    let getRandomInstruction=functions[2]; // no arguments > random instruction
+    let getRandomTurnInstruction=functions[3]; // no arguments > random turning instruction 
+    let M=functions[4]; // 2 arguments (map, newMap) > do something with map and newMap
+
+    function isLocked(map) { // > boolean : game over 
+        let n1= instructionToJsFunction( ['anycolor', goAhead] )(map) ;
+        let n2= instructionToJsFunction( ['anycolor', turnRight] )(map) ;
+        let n3= instructionToJsFunction( ['anycolor', turnLeft] )(map) ;
+        return ( goFall(n1) ) && ( turnFall(n2) ) && ( turnFall(n3) ) ;
+    }
+
+    /* Terminal rec
+        INPUTS : emptymap, first instruction, empty list F
+        OUTPUT : [ map, F ]
+            - map : initial map with star at the end 
+            - F   : solution : all needed instruction to reach the star 
+    */
+    function rec(map,instruction,F) {
+        if (isLocked(map)) return [putStar(map),F] ; 
+        let nmap= robotColor(map)===' ' ? colorMap(map,instruction[0]) :map ;
+        let newMap= instructionToJsFunction( instruction )(nmap) ;
+        if (instruction[1]===goAhead) { 
+            if (goFall(newMap))     return rec(map, getRandomTurnInstruction(),F);
+            return rec( newMap, getRandomInstruction(), listAppend(F,instruction) ); 
+        }
+        else  {
+            if (turnFall(newMap)) return rec(map, getRandomInstruction(),F);
+            return rec( M(map,newMap), ['anycolor', goAhead], listAppend(F,instruction));
+        }   
+    }     
+
+    let eMap= emptyMap(h,w,n,obj);
+    let C= rec(eMap, ['anycolor',goAhead], emptyList());   
+    let map= { board: C[0].board, robot: eMap.robot, stars: 1, hole: eMap.hole,
+               maxMoves: eMap.maxMoves, obj: eMap.obj };
+               
+    return [map,[C[1]]];
+
+}
+
+    
+    
+//--------------------------------------------------------------------END OF smartSnack.JS----------------------------------------------------------------------------------------------------/
+
+
+
+
+//--------------------------------------------------------------------Script test.js---------------------------------------------------------------------------------------/
+
+
+
+/****************************************** RECURSED *************************************************** 
+This test return random puzzles that have one commun constant solution [F1,F2],
+EXAMPLE :  http://robozzle.com/js/play.aspx?puzzle=536
+
+
+
+************************************** FUNCTIONS ******************************************/
+ 
+function turnFall(map) { 
+    let followDir1= instructionToJsFunction( ['anycolor', goAhead] )(map);
+    return (map.moves)%2!==0 || goFall(followDir1) ; 
+}
+function goFall(map)   { 
+    if (isRightPlace(map)) return 1;
+    let followDir1= instructionToJsFunction( ['anycolor', goAhead] )(map);
+    return isRightPlace(followDir1) && (map.moves-1)%2===0 ; 
+}
+function getRandomInstruction() { 
+    let color= Math.floor(Math.random() * 100);
+    return color===61 ? ['r',turnRight] : color===31 ? ['b',turnLeft] : ['anycolor',goAhead] ; 
+}
+function getRandomTurnInstruction() {         
+    let color= Math.floor(Math.random() * 4);
+    return color % 2 ===0 ? ['r',turnRight] : ['b',turnLeft] ;
+}
+function M(map,newMap) {
+    function findMiddleWay(map) {
+        function f(map,i) {
+            let next= instructionToJsFunction(['anycolor',goAhead])(map);
+            return i>0 ? f(next,i-1) : map.robot ;
+        }
+    return f(instructionToJsFunction(['anycolor',turnAround])(map),map.moves/2);
+    }
+    function colorMiddleWay(map,robot) {
+        let newMap= { board: [], robot:map.robot, stars: map.stars, hole: map.hole, maxMoves: map.maxMoves, moves: 0, obj: map.obj };
+        /* Terminal function */
+        function Terminal(i) { 
+            if (i<map.board.length) {
+                if (i===robot.x) {
+                        //let a= Math.floor(Math.random() * 4) % 2 ==0 ? 'g' : 'r' ;
+                        newMap.board[i] = map.board[i].slice(0,robot.y) + 'g' + map.board[i].slice(robot.y+1) ; 
+                }
+                else newMap.board[i] = map.board[i];
+                Terminal(i+1);
+            }
+        } 
+        Terminal(0);
+        return newMap;
+    }
+    return colorMiddleWay(newMap,findMiddleWay(map));
+}
+let T=[turnFall,goFall,getRandomInstruction,getRandomTurnInstruction,M];
+
+
+/********************************** CONSOLE ********************************************* */
+
+let randomMap= CreatMap(17,17,3000,collectAllStars,T);
+
+const Fz1= [ ['anycolor',F2], ['r',turnRight], ['b',turnLeft],['anycolor',F1] ] ;
+const Fz2= [ ['anycolor',goAhead], ['b',F2], ['anycolor',goAhead] ] ;
+
+//console.log(playGame(randomMap[0],[Fz1,Fz2]));
+//console.log(playGame(C[0],C[1]));
+
+
+
+    
+//--------------------------------------------------------------------END OF TEST.JS----------------------------------------------------------------------------------------------------/
+ 
+
+
+    
+    const icons = {
+        robotEast:   { string: '\uEE00', color: 'pink' },
+        robotSouth:  { string: '\uEE01', color: 'pink' },
+        robotWest:   { string: '\uEE02', color: 'pink' },
+        robotNorth:  { string: '\uEE03', color: 'pink' },
+        star:        { string: '\uEE04', color: 'yellow' },
+        disk:        { string: '\uEE05', color: 'red' },
+        box:         { string: '\uEE06', color: 'red' },
+        flash:       { string: '\uEE07', color: 'red' },
+        heart:       { string: '\uEE08', color: 'red' },
+        heartBroken: { string: '\uEE09', color: 'red' },
+        lock:        { string: '\uEE0A', color: 'red' },
+        lockOpen:    { string: '\uEE0B', color: 'red' },
+        key:         { string: '\uEE0C', color: 'red' },
+        droplet:     { string: '\uEE0D', color: 'red' },
+        rocket:      { string: '\uEE0E', color: 'red' },
+        empty:       { string: '\uEE0F', color: 'red' },
+    };
+
+    
+// Define your puzzle, including your robot and objectve
+
+    const aPuzzle25 = {
+        board: [ '                ',
+                 '                ',
+                 '                ',
+                 '     gbbbbbbg   ',
+                 '     b      b   ',
+                 '     b      b   ',
+                 '     b bbbbbg   ',
+                 '     b          ',
+                 '   B grg        ',
+                 '   b  b         ',
+                 '   gbbg         ',
+                 '                ' ],
+        robot: { x: 6, y: 7, dir: 0 },
+	Star : 12,
+	
+    };
+
+
+    
+const aPuzzle765 = {
+    board: [ '              ',
+             ' rbbbbbbb9bbb ',
+             ' b          B ',
+             ' b            ',
+             ' b            ',
+             ' b            ',
+             ' b            ',
+             ' b            ',
+             ' b            ',
+             ' b            ',
+             ' 9            ',
+             ' b            ',
+             ' b            ',
+             '              ', ],
+    robot: { x: 12, y: 1, dir: North },
+    stars: 1,
+    hole:  { xe:10, ye:1,  dirE: North,
+             xa: 1, ya: 9, dirA: East },
+    keys: 0,
+    maxMoves: 80,
+    obj: collectAllStarsAndEndInstructions,
+};
+
+const Fte1= [ ['anycolor', jump], ['anycolor', jump], ['anycolor', turnRight], ['anycolor', goAhead] ] ;
+    
+    const aPuzzle42 = {
+    board: [  '                 ',
+             ' rbbbbbbbbbbbbbbr ',
+             ' b              b ',
+             ' b rbbbbbbbbbbr b ',
+             ' b b          b b ',            
+             ' b b rbbbbbbr b b ',
+             ' b b b      b b b ',
+             ' b b b    G b b b ',     
+             ' b b rbbbbr b b b ',
+             ' b b        b b b ',
+             ' b rbbbbbbbbr b b ',
+             ' b            b b ',
+             ' rbbbbbbbbbbbbr G ',
+             '                 ', ],
+    robot: { x: 11, y: 16, dir: North},
+    stars: 2,
+    hole: noHoles,
+    maxMoves: 250,
+    //obj: collectAllStars,
+    obj: collectAllStarsAndEndInstructions,
+};
+
+const Fl1= [ ['anycolor',goAhead], ['r',turnLeft], ['g',F2], ['anycolor',F1] ] ;
+const Fl2= [ ['g',turnRight], ['g',turnRight], ['anycolor',F3] ] ;
+const Fl3= [ ['anycolor',goAhead], ['r',turnRight], ['anycolor',F3] ] ;
+
+    const aPuzzle342 = {
+    board: [  '           ',
+              '      B    ',
+              '      b    ',
+              '     bb    ',
+              ' Bbb b     ',
+              '   bbrbb   ',
+              '     b bbB ',
+              '    bb     ',
+              '    b      ',
+              '    B      ',
+              '           ', ],
+    robot: { x: 5, y: 5, dir: East},
+    stars: 4,
+    hole:  noHoles,
+    maxMoves: 80,
+    //obj:  collectAllStarsAndEndInstructions,
+    obj:  collectAllStars,
+};
+
+const Fk1= [ ['anycolor', F2], ['b', goAhead], ['b', turnLeft], ['anycolor', F2], 
+            ['b', turnRight], ['anycolor', F1] ] ;
+const Fk2= [ ['anycolor', goAhead], ['anycolor', goAhead], ['anycolor', turnRight] ] ;
+
+ const aPuzzle0 = {
+    board: [ '                 ',
+             ' bbbbbbbrbbbbbbb ',
+             '               b ',
+             '               b ',
+             '               r ',
+             '               b ',
+             '               b ',
+             '               G ',
+             '                 ', ],
+    robot: { x: 1, y: 1, dir: East},
+    stars: 1,
+    hole: noHoles,
+    maxMoves: 80,
+    //obj:  collectAllStars,
+    obj: collectAllStarsAndEndInstructions,
+};
+
+const Fn1= [ ['anycolor',F2],['b',turnRight], ['b',F1] ] ;
+const Fn2= [ ['anycolor',goAhead], ['b',F2], ['anycolor',goAhead] ] ;
+
+
+
+
+
+
+    const robotID = "robot";
+
+    
+	
+    
+    
+    function removeRobot() {
+	const rCell = document.getElementById(robotID);
+        rCell.removeAttribute('id');
+        rCell.removeAttribute('style');
+	rCell.innerText = icons.empty.string;
+    }
+
+    function addRobot(aBoardID, aRobot) {
+        let aBoard = document.getElementById(aBoardID)
+        let aCell  = aBoard.rows[aRobot.x].cells[aRobot.y];
+        let anIcon = icons[Object.keys(icons)[aRobot.dir]];
+        aCell.id = robotID;
+        aCell.innerText = anIcon.string;
+        aCell.style.color = anIcon.color;
+    }
+
+    function addStar(aCell) {
+	aCell.innerText = icons.star.string;
+        aCell.style.color = icons.star.color
+    }
+
+    function fillBoard(aBoardID, aPuzzle) {
+        const tbody = document.getElementById(aBoardID);
+        aPuzzle.board.forEach((aLine) => {
+            const newRow = tbody.insertRow();
+            aLine.split('').forEach((aChar) => {
+                const newCell = newRow.insertCell();
+                switch (aChar) {
+                case 'r': newCell.className += " red_tile"; break;
+                case 'g': newCell.className += " green_tile"; break;
+                case 'b': newCell.className += " blue_tile"; break;
+                case 'R': newCell.className += " red_tile"; addStar(newCell); break;
+                case 'G': newCell.className += " green_tile"; addStar(newCell); break;
+                case 'B': newCell.className += " blue_tile"; addStar(newCell); break;
+                }
+            });
+        });
+    }
+
+    function getRandomInt(max) {
+	return Math.floor(Math.random() * max);
+    }
+
+    function moveRobot(aBoardID) {
+	for( let i = 6; i < 9; i++) {
+	    removeRobot();
+	    addRobot(aBoardID,{x:2, y: 1, dir: 0});
+	    
+	}
+	
+    }
+
+    function test() {
+	
+    }
+
+    //console.log(playGame(puzzle1,[F1]));
+
+    const aPuzzle =randomMap[0];
+    
+    window.onload = () => {
+        let aBoardID = "visualizer_board";
+        fillBoard(aBoardID, aPuzzle);
+	addRobot(aBoardID, aPuzzle.robot);
+	document.
+	    getElementById("button_move").
+	    addEventListener("click", () => playGame2(aBoardID,aPuzzle,[Fz1,Fz2]));
+	//addEventListener("click", () => moveRobot(aBoardID));
+    };
+
+//console.log(playGame(randomMap[0],[Fz1,Fz2]));
+
+  </script>
+</html>
+
